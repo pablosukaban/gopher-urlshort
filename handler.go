@@ -18,16 +18,16 @@ type URLShortPath struct {
 // If the path is not provided in the map, then the fallback
 // http.Handler will be called instead.
 func MapHandler(pathsToUrls map[string]string, fallback http.Handler) http.HandlerFunc {
-	paths := parseMap(pathsToUrls)
+	// paths := parseMap(pathsToUrls)
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		for _, p := range paths {
-			if p.OrigPath == r.URL.Path {
-				http.Redirect(w, r, p.RedirectUrl, 301)
-			}
-		}
+		rPath := r.URL.Path
 
-		fallback.ServeHTTP(w, r)
+		if p, ok := pathsToUrls[rPath]; ok {
+			http.Redirect(w, r, p, http.StatusFound)
+		} else {
+			fallback.ServeHTTP(w, r)
+		}
 	}
 }
 
@@ -48,33 +48,31 @@ func MapHandler(pathsToUrls map[string]string, fallback http.Handler) http.Handl
 // See MapHandler to create a similar http.HandlerFunc via
 // a mapping of paths to urls.
 func YAMLHandler(yml []byte, fallback http.Handler) (http.HandlerFunc, error) {
-	var paths []URLShortPath
+	paths, err := parseYaml(yml)
+	if err != nil {
+		return nil, err
+	}
 
+	pathsToUrls := makeMap(paths)
+
+	return MapHandler(pathsToUrls, fallback), nil
+}
+
+func parseYaml(yml []byte) ([]URLShortPath, error) {
+	var paths []URLShortPath
 	err := yaml.Unmarshal(yml, &paths)
 	if err != nil {
 		return nil, err
 	}
 
-	var f = func(w http.ResponseWriter, r *http.Request) {
-		for _, p := range paths {
-			// fmt.Println(p.OrigPath, r.URL.Path, p.OrigPath == r.URL.Path)
-
-			if p.OrigPath == r.URL.Path {
-				http.Redirect(w, r, p.RedirectUrl, 301)
-			}
-		}
-
-		fallback.ServeHTTP(w, r)
-	}
-
-	return f, nil
+	return paths, nil
 }
 
-func parseMap(m map[string]string) []URLShortPath {
-	res := make([]URLShortPath, len(m))
-	for k, v := range m {
-		res = append(res, URLShortPath{OrigPath: k, RedirectUrl: v})
+func makeMap(paths []URLShortPath) map[string]string {
+	var pathsToUrls = make(map[string]string, len(paths))
+	for _, p := range paths {
+		pathsToUrls[p.OrigPath] = p.RedirectUrl
 	}
 
-	return res
+	return pathsToUrls
 }
